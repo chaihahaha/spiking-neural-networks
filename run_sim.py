@@ -3,6 +3,7 @@ import Parameters_Int_and_Fire
 from Poisson_Spike_Trains import Poisson_Trains
 from Correlated_Spike_Trains import Correlated_Trains
 import matplotlib.pyplot as plt
+import networkx as nx
 
 tau_mem       = Parameters_Int_and_Fire.tau_mem
 E_leak        = Parameters_Int_and_Fire.E_leak
@@ -228,6 +229,55 @@ def create_neuron_synapse():
     all_neurons = [ego] + exc_pre_neurons + inh_pre_neurons
     return all_neurons, all_syns
 
+def create_neuron_synapse_networkx():
+    n_hidden = 20
+    n_hidden_syns = 100
+    spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
+    hidden_neurons = [Neuron(t_0+time_step_sim) for i in range(n_hidden)]
+
+    G = nx.DiGraph()
+    for neuron in hidden_neurons:
+        G.add_node(neuron, input=False)
+    for i in range(numb_exc_syn):
+        # create an input neuron with the manually generated spike trains
+        exc_neuron = InputNeuron(t_0+time_step_sim, spike_trains_complete_e[i])
+
+        # create the exitatory synapse from this input neuron to a random hidden neuron
+        post_neuron = np.random.choice(hidden_neurons)
+        exc_syn = Synapse(t_0+time_step_sim, w_e, E_e, tau_e, exc_neuron, post_neuron, "exc")
+
+        G.add_node(exc_neuron, input=True)
+        G.add_edge(exc_neuron, post_neuron, syn=exc_syn)
+
+    for i in range(numb_inh_syn):
+        # create an input neuron with the manually generated spike trains
+        inh_neuron = InputNeuron(t_0+time_step_sim, spike_trains_complete_i[i])
+
+        # create the inhibitory synapse from this input neuron to a random hidden neuron
+        post_neuron = np.random.choice(hidden_neurons)
+        inh_syn = Synapse(t_0+time_step_sim, w_i, E_i, tau_i, inh_neuron, post_neuron, "inh")
+
+        G.add_node(inh_neuron, input=True)
+        G.add_edge(inh_neuron, post_neuron, syn=inh_syn)
+
+    for i in range(n_hidden_syns):
+        pre_neuron = np.random.choice(hidden_neurons)
+        post_neuron = np.random.choice(hidden_neurons)
+        while G.has_edge(pre_neuron, post_neuron):
+            pre_neuron = np.random.choice(hidden_neurons)
+            post_neuron = np.random.choice(hidden_neurons)
+        if np.random.rand() < 0.8:
+            hidden_syn = Synapse(t_0+time_step_sim, w_e, E_e, tau_e, pre_neuron, post_neuron, "exc")
+        else:
+            hidden_syn = Synapse(t_0+time_step_sim, w_i, E_i, tau_i, pre_neuron, post_neuron, "inh")
+        G.add_edge(pre_neuron, post_neuron, syn=hidden_syn)
+    layout = nx.spring_layout(G)
+    nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if G.nodes[u]['input'] else 'k' for u in G.nodes], node_size=50, with_labels=False)
+    plt.savefig("network_topo.png")
+    plt.close()
+    return G
+
+
 def sim():
     all_neurons, all_syns = create_neuron_synapse()
     tt = t_0 + time_step_sim
@@ -273,5 +323,53 @@ def sim():
     plt.show()
     fig1.savefig('STDP_correl.png')
 
+def sim_networkx():
+    G = create_neuron_synapse_networkx()
+    all_neurons = list(G.nodes)
+    all_syns = [G.edges[e]['syn'] for e in G.edges]
+    hidden_neurons = [neuron for neuron in G.nodes if G.nodes[neuron]['input'] == False]
+    n_hidden = len(hidden_neurons)
+    n_syns = len(all_syns)
+    tt = t_0 + time_step_sim
+
+    number_spikes = [0] * n_hidden
+    FR_vec = [[] for i in range(n_hidden)]
+
+    w_e_storage = np.zeros((int(round((t_max-t_0)/time_step_sim))+1, n_syns))
+    w_e_storage[0, :] = [syn.w_tt for syn in all_syns[:n_syns]]
+    counter_storage = 1
+
+    while tt <= t_max:
+        for neuron in all_neurons:
+            neuron.tick(time_step_sim)
+        for syn in all_syns:
+            syn.tick(time_step_sim)
+        tt += time_step_sim
+
+        # record the synapse weights
+        w_e_storage[counter_storage,:] = [syn.w_tt for syn in all_syns]
+        counter_storage += 1
+
+        # record the spike frequency
+        for i in range(n_hidden):
+            hidden = hidden_neurons[i]
+            if hidden.V_tt == V_reset:
+                number_spikes[i] += 1
+            if tt%1000==0:
+                FR_vec[i].append(number_spikes[i])
+                number_spikes[i] = 0
+    fig, ax = plt.subplots()
+    ax.plot(FR_vec)
+    fig.savefig("firing_rate_nx.png")
+
+    fig1, ax2 = plt.subplots()
+    ax2.plot(range(int(round((t_max-t_0)/time_step_sim))+1),w_e_storage,lw=0.5,label='Corr : ' + str(c1),color='m')
+    ax2.set_xticks([0,t_max * 0.5, t_max])
+    ax2.set_xlabel('Time (ms)')
+    ax2.set_ylabel('Syn. Weight')
+    plt.tight_layout()
+    plt.show()
+    fig1.savefig('STDP_correl_nx.png')
+
 if __name__ == "__main__":
-    sim()
+    sim_networkx()
