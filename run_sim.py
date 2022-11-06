@@ -47,7 +47,7 @@ class Euler:
         return y_0
 
 class Neuron:
-    def __init__(self, init_V_tt, init_tt, tau_mem, E_leak, V_thresh, V_reset, int_delta_t):
+    def __init__(self, init_tt, init_V_tt=-70, tau_mem=20, E_leak=-60, V_thresh=-50, V_reset=-70, int_delta_t=0.01):
         self.V_tt = init_V_tt         # membrane voltage
         self.tt = init_tt             # current time
         self.tau_mem = tau_mem        # membrane time constant
@@ -112,7 +112,7 @@ class InputNeuron:
         return tt + time_step_sim <= self.spike_train[idx]
 
 class Synapse:
-    def __init__(self, init_tt, init_g_tt, init_w_tt, w_max, E_syn, tau_syn, tau_LTP, tau_LTD, A_LTP, A_LTD, pre_neuron, syn_type, int_delta_t):
+    def __init__(self, init_tt, init_w_tt, E_syn, tau_syn, pre_neuron, syn_type, init_g_tt=0, w_max=40, tau_LTP=17, tau_LTD=34, A_LTP=0.02, A_LTD=-0.01, int_delta_t=0.01):
         self.tt = init_tt                      # current time
         self.g_tt = init_g_tt                  # synapse conductance
         self.w_tt = init_w_tt                  # synapse weight
@@ -210,7 +210,7 @@ def create_neuron_synapse():
         exc_pre_neurons.append(exc_neuron)
 
         # create the exitatory synapse of this input neuron
-        exc_syn = Synapse(t_0+time_step_sim, 0, w_e, w_max, E_e, tau_e, tau_LTP, tau_LTD, A_LTP, A_LTD, exc_neuron, "exc", delta_t)
+        exc_syn = Synapse(t_0+time_step_sim, w_e, E_e, tau_e, exc_neuron, "exc")
         exc_syns.append(exc_syn)
 
     inh_syns = []
@@ -221,11 +221,11 @@ def create_neuron_synapse():
         inh_pre_neurons.append(inh_neuron)
 
         # create the inhibitory synapse of this input neuron
-        inh_syn = Synapse(t_0+time_step_sim, 0, w_i, w_max, E_i, tau_i, tau_LTP, tau_LTD, A_LTP, A_LTD, inh_neuron, "inh", delta_t)
+        inh_syn = Synapse(t_0+time_step_sim, w_i, E_i, tau_i, inh_neuron, "inh")
         inh_syns.append(inh_syn)
 
     # create ego neuron which accepts inputs from input neurons
-    ego = Neuron(V_reset, t_0+time_step_sim, tau_mem, E_leak, V_thresh, V_reset, delta_t)
+    ego = Neuron(t_0+time_step_sim)
     ego_input_syns = exc_syns + inh_syns
     ego.add_synapses(ego_input_syns)
 
