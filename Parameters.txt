@@ -1,6 +1,6 @@
 Parameters used in this simulation:
  
-Date: 2022-11-06 22:18:41.029521
+Date: 2022-11-06 22:35:33.772049
  
 tau_mem= 20.000000
 E_leak= -60.000000

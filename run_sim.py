@@ -65,11 +65,9 @@ class Neuron:
         self.func_V = lambda V_tt, syn_input_tt: (self.E_leak - V_tt + syn_input_tt)/self.tau_mem
 
         self.euler = Euler()          # euler integrator
-    def add_synapses(self, syns):
-        # add a list of input synapses to this neuron
-        for syn in syns:
-            self.synapses.append(syn)
-            syn.set_post_neuron(self)
+    def accept_synapse(self, syn):
+        # add an input synapse to this neuron
+        self.synapses.append(syn)
     def tick(self, time_step_sim):
         # simulate the neuron for one step
 
@@ -112,7 +110,7 @@ class InputNeuron:
         return tt + time_step_sim <= self.spike_train[idx]
 
 class Synapse:
-    def __init__(self, init_tt, init_w_tt, E_syn, tau_syn, pre_neuron, syn_type, init_g_tt=0, w_max=40, tau_LTP=17, tau_LTD=34, A_LTP=0.02, A_LTD=-0.01, int_delta_t=0.01):
+    def __init__(self, init_tt, init_w_tt, E_syn, tau_syn, pre_neuron, post_neuron, syn_type, init_g_tt=0, w_max=40, tau_LTP=17, tau_LTD=34, A_LTP=0.02, A_LTD=-0.01, int_delta_t=0.01):
         self.tt = init_tt                      # current time
         self.g_tt = init_g_tt                  # synapse conductance
         self.w_tt = init_w_tt                  # synapse weight
@@ -124,12 +122,17 @@ class Synapse:
         self.A_prepost = A_LTP                 # LTP weight changing amplitude
         self.A_postpre = A_LTD                 # LTP weight changing amplitude
         self.pre_neuron = pre_neuron           # the previous neuron this synapse connects from
+        self.post_neuron = post_neuron         # the post neuron this synapse connects to
+        self.post_neuron.accept_synapse(self)
+
         self.type = syn_type                   # synapse type: excitatory or inhibitory
+        if self.type == "exc":
+            assert self.post_neuron.E_leak < self.E_syn
+        elif self.type == "inh":
+            assert self.post_neuron.E_leak > self.E_syn
+
         self.delta_t = int_delta_t             # euler integration time step
         
-        # the post neuron this synapse connects to (to be set after adding this synapse to the post neuron)
-        self.post_neuron = None
-
         # define function to integrate the synapse conductance equation
         # the function f(g_tt) for the simplified membrane voltage equation: d g_tt / dtt = f(g_tt), g_tt += w_tt if spike
         # whose full form is: d g_tt / dtt = - g_tt/tau_syn + w_tt * Σ dirac(t - ts)
@@ -152,13 +155,6 @@ class Synapse:
             # if the pre neuron or post neuron is spiking, then apply STDP rules to update weights
             self.STDP()
         self.tt += time_step_sim
-    def set_post_neuron(self, neuron):
-        # set the post neuron of this synapse
-        self.post_neuron = neuron
-        if self.type == "exc":
-            assert self.post_neuron.E_leak < self.E_syn
-        elif self.type == "inh":
-            assert self.post_neuron.E_leak > self.E_syn
     def STDP(self):
         # apply Spike-Timing Dependent Plasticity weight update
         Delta_t = self.pre_neuron.last_spike - self.post_neuron.last_spike
@@ -202,6 +198,9 @@ def generate_spike_trains():
 def create_neuron_synapse():
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
 
+    # create ego neuron which accepts inputs from input neurons
+    ego = Neuron(t_0+time_step_sim)
+
     exc_syns = []
     exc_pre_neurons = []
     for i in range(numb_exc_syn):
@@ -210,7 +209,7 @@ def create_neuron_synapse():
         exc_pre_neurons.append(exc_neuron)
 
         # create the exitatory synapse of this input neuron
-        exc_syn = Synapse(t_0+time_step_sim, w_e, E_e, tau_e, exc_neuron, "exc")
+        exc_syn = Synapse(t_0+time_step_sim, w_e, E_e, tau_e, exc_neuron, ego, "exc")
         exc_syns.append(exc_syn)
 
     inh_syns = []
@@ -221,14 +220,10 @@ def create_neuron_synapse():
         inh_pre_neurons.append(inh_neuron)
 
         # create the inhibitory synapse of this input neuron
-        inh_syn = Synapse(t_0+time_step_sim, w_i, E_i, tau_i, inh_neuron, "inh")
+        inh_syn = Synapse(t_0+time_step_sim, w_i, E_i, tau_i, inh_neuron, ego, "inh")
         inh_syns.append(inh_syn)
 
-    # create ego neuron which accepts inputs from input neurons
-    ego = Neuron(t_0+time_step_sim)
     ego_input_syns = exc_syns + inh_syns
-    ego.add_synapses(ego_input_syns)
-
     all_syns = ego_input_syns
     all_neurons = [ego] + exc_pre_neurons + inh_pre_neurons
     return all_neurons, all_syns
