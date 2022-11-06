@@ -127,9 +127,6 @@ class Synapse:
         self.type = syn_type                   # synapse type: excitatory or inhibitory
         self.delta_t = int_delta_t             # euler integration time step
         
-        self.old_pre_spike = self.tt           # record the last pre-spike to detect if pre-neuron spiked
-        self.old_post_spike = self.tt          # record the last post-spike to detect if post-neuron spiked
-
         # the post neuron this synapse connects to (to be set after adding this synapse to the post neuron)
         self.post_neuron = None
 
@@ -140,18 +137,20 @@ class Synapse:
         self.func_g = lambda g_tt, tau_syn: -g_tt/tau_syn
 
         self.euler = Euler()                   # euler integrator
+    def pre_spiking(self, time_step_sim):
+        return self.tt - time_step_sim <= self.pre_neuron.last_spike < self.tt + time_step_sim
+    def post_spiking(self, time_step_sim):
+        return self.tt - time_step_sim <= self.post_neuron.last_spike < self.tt + time_step_sim
     def tick(self, time_step_sim):
-        if self.tt - time_step_sim <= self.pre_neuron.last_spike < self.tt + time_step_sim:
-            # if pre-neuron spiked, then add weight
+        if self.pre_spiking(time_step_sim):
+            # if pre-neuron is spiking, then add weight
             self.g_tt += self.w_tt
 
         # integrate the synapse conductance equation
         self.g_tt = self.euler.euler_integration(self.func_g, self.tau_syn, self.g_tt, self.tt, time_step_sim, self.delta_t)
-        if self.type == "exc" and (self.pre_neuron.last_spike != self.old_pre_spike or self.post_neuron.last_spike != self.old_post_spike):
-            # if the pre neuron or post neuron spiked, then apply STDP rules to update weights
+        if self.type == "exc" and (self.pre_spiking(time_step_sim) or self.post_spiking(time_step_sim)):
+            # if the pre neuron or post neuron is spiking, then apply STDP rules to update weights
             self.STDP()
-        self.old_pre_spike = self.pre_neuron.last_spike
-        self.old_post_spike = self.post_neuron.last_spike
         self.tt += time_step_sim
     def set_post_neuron(self, neuron):
         # set the post neuron of this synapse
