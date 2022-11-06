@@ -1,0 +1,32 @@
+Parameters used in this simulation:
+ 
+Date: 2022-11-06 16:36:37.903978
+ 
+tau_mem= 20.000000
+E_leak= -60.000000
+V_reset= -70.000000
+V_thresh= -50.000000
+E_e= 0.000000
+tau_e= 3.000000
+firing_rate_e= 3.000000
+w_e= 0.500000
+numb_exc_syn= 20.000000
+E_i= -80.000000
+tau_i= 5.000000
+firing_rate_i= 10.000000
+w_i= 1.000000
+numb_inh_syn= 10.000000
+t_0= 0.000000
+t_max= 30000.000000
+time_step_sim= 1.000000
+delta_t= 0.010000
+ 
+STDP Parameters:
+tau_LTP= 17.000000
+A_LTP= 0.020000
+tau_LTD= 34.000000
+A_LTD= -0.010000
+w_max= 40.000000
+c1= 0.200000
+c2= 0.100000
+tau_c= 20.000000
