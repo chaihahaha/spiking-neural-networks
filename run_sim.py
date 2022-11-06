@@ -263,7 +263,7 @@ def create_neuron_synapse_networkx():
     for i in range(n_hidden_syns):
         pre_neuron = np.random.choice(hidden_neurons)
         post_neuron = np.random.choice(hidden_neurons)
-        while G.has_edge(pre_neuron, post_neuron):
+        while G.has_edge(pre_neuron, post_neuron) or pre_neuron == post_neuron:
             pre_neuron = np.random.choice(hidden_neurons)
             post_neuron = np.random.choice(hidden_neurons)
         if np.random.rand() < 0.8:
