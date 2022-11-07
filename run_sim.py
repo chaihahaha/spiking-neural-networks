@@ -231,7 +231,7 @@ def create_neuron_synapse():
 
 def create_neuron_synapse_networkx():
     n_hidden = 20
-    n_hidden_syns = 100
+    n_hidden_syns = 40
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
     hidden_neurons = [Neuron(t_0+time_step_sim) for i in range(n_hidden)]
 
