@@ -231,7 +231,7 @@ def create_neuron_synapse():
 
 def create_neuron_synapse_networkx():
     n_hidden = 20
-    n_hidden_syns = 40
+    n_hidden_syns = 100
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
     hidden_neurons = [Neuron(t_0+time_step_sim) for i in range(n_hidden)]
 
@@ -266,7 +266,7 @@ def create_neuron_synapse_networkx():
         while G.has_edge(pre_neuron, post_neuron) or G.has_edge(post_neuron, pre_neuron) or pre_neuron == post_neuron:
             pre_neuron = np.random.choice(hidden_neurons)
             post_neuron = np.random.choice(hidden_neurons)
-        if np.random.rand() < 0.5:
+        if np.random.rand() < 0.8:
             hidden_syn = Synapse(t_0+time_step_sim, w_e, E_e, tau_e, pre_neuron, post_neuron, "exc")
         else:
             hidden_syn = Synapse(t_0+time_step_sim, w_i, E_i, tau_i, pre_neuron, post_neuron, "inh")
@@ -363,7 +363,7 @@ def sim_networkx():
     fig.savefig("firing_rate_nx.png")
 
     fig1, ax2 = plt.subplots()
-    ax2.plot(range(int(round((t_max-t_0)/time_step_sim))+1),w_e_storage,lw=0.5,label='Corr : ' + str(c1),color='m')
+    ax2.plot(range(int(round((t_max-t_0)/time_step_sim))+1),w_e_storage)
     ax2.set_xticks([0,t_max * 0.5, t_max])
     ax2.set_xlabel('Time (ms)')
     ax2.set_ylabel('Syn. Weight')
