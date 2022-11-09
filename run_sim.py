@@ -4,6 +4,7 @@ from Poisson_Spike_Trains import Poisson_Trains
 from Correlated_Spike_Trains import Correlated_Trains
 import matplotlib.pyplot as plt
 import networkx as nx
+import time
 
 tau_mem       = Parameters_Int_and_Fire.tau_mem
 E_leak        = Parameters_Int_and_Fire.E_leak
@@ -368,8 +369,10 @@ def sim_networkx():
     ax2.set_xlabel('Time (ms)')
     ax2.set_ylabel('Syn. Weight')
     plt.tight_layout()
-    plt.show()
     fig1.savefig('STDP_correl_nx.png')
 
 if __name__ == "__main__":
+    tik = time.time()
     sim_networkx()
+    tok = time.time()
+    print(tok - tik)
