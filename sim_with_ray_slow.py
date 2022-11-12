@@ -238,54 +238,58 @@ def generate_spike_trains():
 
 
 def create_neuron_synapse_networkx():
-    n_hidden = 2
-    n_hidden_syns = 1
+    n_hidden = 20
+    n_hidden_syns = 40
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
+    G = nx.DiGraph()
+
     hidden_neurons = [Neuron.remote(t_0+time_step_sim) for i in range(n_hidden)]
     hidden_neurons_ids = ray.get([neuron.get_id.remote() for neuron in hidden_neurons])
+    for nid,neuron in zip(hidden_neurons_ids, hidden_neurons):
+        G.add_node(nid, input=False, neuron=neuron)
 
-    G = nx.DiGraph()
-    for i in range(n_hidden):
-        neuron_id = hidden_neurons_ids[i]
-        neuron = hidden_neurons[i]
-        G.add_node(neuron_id, input=False, neuron=neuron)
+    nid2neuron = dict()
+    nid2neuron |= dict(zip(hidden_neurons_ids, hidden_neurons))
+
+    exc_neurons = [InputNeuron.remote(t_0+time_step_sim, spike_trains_complete_e[i]) for i in range(numb_exc_syn)]
+    exc_neurons_ids = ray.get([n.get_id.remote() for n in exc_neurons])
+    nid2neuron |= dict(zip(exc_neurons_ids, exc_neurons))
+
+    exc_syns = []
+    post_neuron_ids = []
     for i in range(numb_exc_syn):
-        # create an input neuron with the manually generated spike trains
-        pre_neuron = InputNeuron.remote(t_0+time_step_sim, spike_trains_complete_e[i])
-        pre_neuron_id = ray.get(pre_neuron.get_id.remote())
+        pre_neuron_id = exc_neurons_ids[i]
+        post_neuron_id = np.random.choice(hidden_neurons_ids)
+        exc_syns.append(Synapse.remote(t_0+time_step_sim, w_e, E_e, tau_e, pre_neuron_id, post_neuron_id, "exc"))
+        post_neuron_ids.append(post_neuron_id)
 
-        # create the exitatory synapse from this input neuron to a random hidden neuron
-        post_neuron = np.random.choice(hidden_neurons)
-        post_neuron_id = ray.get(post_neuron.get_id.remote())
+    exc_syns_ids = ray.get([n.get_id.remote() for n in exc_syns])
+    for i in range(numb_exc_syn):
+        nid2neuron[post_neuron_ids[i]].add_synapses_ids.remote([exc_syns_ids[i]])
+        G.add_node(exc_neurons_ids[i], input=True, neuron=exc_neurons[i])
+        G.add_edge(exc_neurons_ids[i], post_neuron_ids[i], syn_id=exc_syns_ids[i], syn=exc_syns[i])
 
-        exc_syn = Synapse.remote(t_0+time_step_sim, w_e, E_e, tau_e, pre_neuron_id, post_neuron_id, "exc")
-        exc_syn_id = ray.get(exc_syn.get_id.remote())
-        post_neuron.add_synapses_ids.remote([exc_syn_id])
+    inh_neurons = [InputNeuron.remote(t_0+time_step_sim, spike_trains_complete_i[i]) for i in range(numb_inh_syn)]
+    inh_neurons_ids = ray.get([n.get_id.remote() for n in inh_neurons])
+    nid2neuron |= dict(zip(inh_neurons_ids, inh_neurons))
 
-        G.add_node(pre_neuron_id, input=True, neuron=pre_neuron)
-        G.add_edge(pre_neuron_id, post_neuron_id, syn_id=exc_syn_id, syn=exc_syn)
-
+    inh_syns = []
+    post_neuron_ids = []
     for i in range(numb_inh_syn):
-        # create an input neuron with the manually generated spike trains
-        pre_neuron = InputNeuron.remote(t_0+time_step_sim, spike_trains_complete_i[i])
-        pre_neuron_id = ray.get(pre_neuron.get_id.remote())
+        pre_neuron_id = inh_neurons_ids[i]
+        post_neuron_id = np.random.choice(hidden_neurons_ids)
+        inh_syns.append(Synapse.remote(t_0+time_step_sim, w_i, E_i, tau_i, pre_neuron_id, post_neuron_id, "inh"))
+        post_neuron_ids.append(post_neuron_id)
 
-        # create the inhibitory synapse from this input neuron to a random hidden neuron
-        post_neuron = np.random.choice(hidden_neurons)
-        post_neuron_id = ray.get(post_neuron.get_id.remote())
+    inh_syns_ids = ray.get([s.get_id.remote() for s in inh_syns])
+    for i in range(numb_inh_syn):
+        nid2neuron[post_neuron_ids[i]].add_synapses_ids.remote([inh_syns_ids[i]])
+        G.add_node(inh_neurons_ids[i], input=True, neuron=inh_neurons[i])
+        G.add_edge(inh_neurons_ids[i], post_neuron_ids[i], syn_id=inh_syns_ids[i], syn=inh_syns[i])
 
-        inh_syn = Synapse.remote(t_0+time_step_sim, w_i, E_i, tau_i, pre_neuron_id, post_neuron_id, "inh")
-        inh_syn_id = ray.get(inh_syn.get_id.remote())
-        post_neuron.add_synapses_ids.remote([inh_syn_id])
-
-        G.add_node(pre_neuron_id, input=True, neuron=pre_neuron)
-        G.add_edge(pre_neuron_id, post_neuron_id, syn_id=inh_syn_id, syn=inh_syn)
-    all_neurons_ids = list(G.nodes)
-    all_neurons = [G.nodes[nid]['neuron'] for nid in all_neurons_ids]
-    hidden_neurons_ids = [nid for nid in G.nodes if G.nodes[nid]['input'] == False]
-    hidden_neurons = [G.nodes[nid]['neuron'] for nid in hidden_neurons_ids]
-    nid2neuron = dict(zip(all_neurons_ids, all_neurons))
-
+    hidden_syns = []
+    pre_neuron_ids = []
+    post_neuron_ids = []
     for i in range(n_hidden_syns):
         pre_neuron_id = np.random.choice(hidden_neurons_ids)
         post_neuron_id = np.random.choice(hidden_neurons_ids)
@@ -296,24 +300,31 @@ def create_neuron_synapse_networkx():
             hidden_syn = Synapse.remote(t_0+time_step_sim, w_e, E_e, tau_e, pre_neuron_id, post_neuron_id, "exc")
         else:
             hidden_syn = Synapse.remote(t_0+time_step_sim, w_i, E_i, tau_i, pre_neuron_id, post_neuron_id, "inh")
-        hidden_syn_id = ray.get(hidden_syn.get_id.remote())
-        nid2neuron[post_neuron_id].add_synapses_ids.remote([hidden_syn_id])
-        G.add_edge(pre_neuron_id, post_neuron_id, syn_id=hidden_syn_id, syn=hidden_syn)
+        pre_neuron_ids.append(pre_neuron_id)
+        post_neuron_ids.append(post_neuron_id)
+        hidden_syns.append(hidden_syn)
+
+    hidden_syns_ids = ray.get([s.get_id.remote() for s in hidden_syns])
+    for i in range(n_hidden_syns):
+        nid2neuron[post_neuron_ids[i]].add_synapses_ids.remote([hidden_syns_ids[i]])
+        G.add_edge(pre_neuron_ids[i], post_neuron_ids[i], syn_id=hidden_syns_ids[i], syn=hidden_syns[i])
+
+
+    all_neurons_ids = exc_neurons_ids + inh_neurons_ids + hidden_neurons_ids
+    all_neurons = exc_neurons + inh_neurons + hidden_neurons
+
+    all_syns_ids = exc_syns_ids + inh_syns_ids + hidden_syns_ids
+    all_syns = exc_syns + inh_syns + hidden_syns
+    sid2syn = dict(zip(all_syns_ids, all_syns))
+
     layout = nx.spring_layout(G)
     nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if G.nodes[u]['input'] else 'k' for u in G.nodes], node_size=50, with_labels=False)
     plt.savefig("network_topo.png")
     plt.close()
-    return G
+    return G, all_neurons, all_neurons_ids, all_syns, all_syns_ids, nid2neuron, sid2syn
 
 def sim_networkx():
-    G = create_neuron_synapse_networkx()
-    all_neurons_ids = list(G.nodes)
-    all_neurons = [G.nodes[nid]['neuron'] for nid in all_neurons_ids]
-    nid2neuron = dict(zip(all_neurons_ids, all_neurons))
-
-    all_syns_ids = [G.edges[e]['syn_id'] for e in G.edges]
-    all_syns = [G.edges[e]['syn'] for e in G.edges]
-    sid2syn = dict(zip(all_syns_ids, all_syns))
+    G, all_neurons, all_neurons_ids, all_syns, all_syns_ids, nid2neuron, sid2syn = create_neuron_synapse_networkx()
 
     hidden_neurons_ids = [nid for nid in G.nodes if G.nodes[nid]['input'] == False]
     hidden_neurons = [G.nodes[nid]['neuron'] for nid in hidden_neurons_ids]
