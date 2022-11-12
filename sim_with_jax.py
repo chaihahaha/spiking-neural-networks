@@ -157,32 +157,32 @@ class Synapse:
     def post_spiking(self, time_step_sim, post_neuron):
         return self.tt - time_step_sim <= post_neuron.last_spike < self.tt + time_step_sim
     def tick(self, time_step_sim, neurons):
-        w_tt = self.w_tt
         g_tt = self.g_tt
         last_spikes = jnp.asarray([n.last_spike for n in neurons])
-        pre_spike = self.pre_neuron_idx_1hot * last_spikes
-        post_spike = self.post_neuron_idx_1hot * last_spikes
+        pre_spike = jnp.sum(self.pre_neuron_idx_1hot * last_spikes)
+        post_spike = jnp.sum(self.post_neuron_idx_1hot * last_spikes)
+
+        # logic AND in jnp
+        pre_spiked1 = jnp.where(self.tt - time_step_sim <= pre_spike, 1, 0)
+        pre_spiked = jnp.where(pre_spike < self.tt + time_step_sim, pre_spiked1, 0)
+        post_spiked1 = jnp.where(self.tt - time_step_sim <= post_spike, 1, 0)
+        post_spiked = jnp.where(post_spike < self.tt + time_step_sim, post_spiked1, 0)
         # if pre-neuron is spiking, then add weight
-        g_tt = jnp.where(self.tt - time_step_sim <= pre_spike < self.tt + time_step_sim, self.w_tt + g_tt, g_tt)
+        g_tt += self.w_tt * pre_spiked
 
         # integrate the synapse conductance equation
         g_tt = euler_integration(self.func_g, self.tau_syn, g_tt, self.tt, self.delta_t)
-        if self.type == 1:
-            # if the pre neuron or post neuron is spiking, then apply STDP rules to update weights
-            pre_spiked = self.tt - time_step_sim <= pre_spike < self.tt + time_step_sim
-            post_spiked = self.tt - time_step_sim <= post_spike < self.tt + time_step_sim
-            w_tt = jnp.where(pre_spiked or post_spiked, self.STDP(pre_spike, post_spike), w_tt)
-        return Synapse(self.tt + time_step_sim, w_tt, self.E_syn, self.tau_syn, self.pre_neuron_idx, self.post_neuron_idx, self.type, g_tt, self.w_max, self.tau_prepost, self.tau_postpre, self.A_prepost, self.A_postpre, self.delta_t)
+        # if the pre neuron or post neuron is spiking, then apply STDP rules to update weights
+        w_STDP = self.STDP(pre_spike, post_spike)
+        # logic OR in jnp
+        w_tt = jnp.where(pre_spiked, w_STDP, self.w_tt)
+        w_tt = jnp.where(post_spiked, w_STDP, w_tt)
+        return Synapse(self.tt + time_step_sim, w_tt, self.E_syn, self.tau_syn, self.pre_neuron_idx_1hot, self.post_neuron_idx_1hot, self.type, g_tt, self.w_max, self.tau_prepost, self.tau_postpre, self.A_prepost, self.A_postpre, self.delta_t)
 
     def STDP(self, pre_spike, post_spike):
         # apply Spike-Timing Dependent Plasticity weight update
         Delta_t = pre_spike - post_spike
-        if Delta_t > 0:
-            Delta_w_e = self.A_postpre * jnp.exp(-Delta_t/self.tau_postpre)
-        elif Delta_t < 0:
-            Delta_w_e = self.A_prepost * jnp.exp(Delta_t/self.tau_prepost)
-        else:
-            Delta_w_e = 0
+        Delta_w_e = jnp.where(Delta_t > 0, self.A_postpre * jnp.exp(-Delta_t/self.tau_postpre), self.A_prepost * jnp.exp(Delta_t/self.tau_prepost))
         w_tt = self.w_tt + Delta_w_e
         w_tt = jnp.clip(w_tt, 0, w_max)
         return w_tt
@@ -255,22 +255,20 @@ def create_neuron_synapse_networkx():
             syns.append(Synapse(t_0+time_step_sim, w_e, E_e, tau_e, pre_neuron_idx_1hot, post_neuron_idx_1hot, 1))
         else:
             syns.append(Synapse(t_0+time_step_sim, w_e, E_e, tau_e, pre_neuron_idx_1hot, post_neuron_idx_1hot, 0))
-    return neurons, syns, hidden_neurons, input_neurons, nx.to_numpy_matrix(G)
+    return tuple(neurons), tuple(syns), tuple(hidden_neurons), tuple(input_neurons), nx.to_numpy_matrix(G)
 
 
 def sim_jit():
     neurons, syns, hidden_neurons, input_neurons, adj_matrix = create_neuron_synapse_networkx()
-    def step(tt, time_step_sim, hidden_neurons, syns, neurons):
-        hidden_neurons_ = []
-        for i in range(len(hidden_neurons)):
-            neuron = hidden_neurons[i]
-            in_syns_logits = adj_matrix[:, i]
-            hidden_neurons_.append(neuron.tick(time_step_sim, syns, in_syns_logits))
-        syns_ = [s.tick(time_step_sim, neurons) for s in syns]
+    def step(tt, time_step_sim, hidden_neurons, syns, input_neurons):
+        print("stepping neurons")
+        hidden_neurons_ = tuple(hidden_neurons[i].tick(time_step_sim, syns, adj_matrix[:, i]) for i in range(len(hidden_neurons)))
+        print("stepping syns")
+        syns_ = tuple(s.tick(time_step_sim, hidden_neurons + input_neurons) for s in syns)
         return (tt + time_step_sim, hidden_neurons_, syns_)
 
     def update_input(time_step_sim, input_neurons):
-        return [n.tick(time_step_sim) for n in input_neurons]
+        return tuple(n.tick(time_step_sim) for n in input_neurons)
 
     n_syns = len(syns)
     n_hidden = len(hidden_neurons)
@@ -283,12 +281,13 @@ def sim_jit():
     w_e_storage[0, :] = [syn.w_tt for syn in syns]
     counter_storage = 1
 
-    step_jit = jax.jit(step)
+    step_jit = jax.jit(step, static_argnums=[0,4]) # static argnums could be removed?
     while tt <= t_max:
+        print("starting update input neurons")
         input_neurons = update_input(time_step_sim, input_neurons)
-        neurons = hidden_neurons + input_neurons
-        tt, hidden_neurons, syns = step_jit(tt, time_step_sim, hidden_neurons, syns, neurons)
-            # record the synapse weights
+        print("starting step neurons and syns")
+        tt, hidden_neurons, syns = step_jit(tt, time_step_sim, hidden_neurons, syns, input_neurons)
+        # record the synapse weights
         w_e_storage[counter_storage,:] = [syn.w_tt for syn in syns]
         counter_storage += 1
 
@@ -300,6 +299,7 @@ def sim_jit():
             if tt%1000==0:
                 FR_vec[i].append(number_spikes[i])
                 number_spikes[i] = 0
+        print(tt)
     fig, ax = plt.subplots()
     ax.plot(FR_vec)
     fig.savefig("firing_rate_nx.png")
