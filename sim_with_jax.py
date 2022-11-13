@@ -266,12 +266,12 @@ def one_hot(i, n):
     a[i] =1
     return a
 def create_neuron_synapse_networkx():
-    n_hidden = 10
+    n_hidden = 5000
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
 
-    G = nx.gnp_random_graph(n_neurons, 0.05, directed=True)
+    G = nx.gnp_random_graph(n_neurons, 0.0003, directed=True)
     print("n neurons:",len(G.nodes))
     print("n syns:",len(G.edges))
     assert len(G.edges) > n_input
@@ -309,10 +309,10 @@ def create_neuron_synapse_networkx():
     neurons_in_syns = []
     for i in range(len(G.nodes)):
         neurons_in_syns.append(G.predecessors(i))
-    layout = nx.spring_layout(G)
-    nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
-    plt.savefig("network_topo.png")
-    plt.close()
+    #layout = nx.spring_layout(G)
+    #nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
+    #plt.savefig("network_topo.png")
+    #plt.close()
     return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), neurons_in_syns, syns_attrs
 
 # not jax, avoid pytree copies

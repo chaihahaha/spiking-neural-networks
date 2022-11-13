@@ -231,8 +231,8 @@ def create_neuron_synapse():
     return all_neurons, all_syns
 
 def create_neuron_synapse_networkx():
-    n_hidden = 200
-    n_hidden_syns = 545
+    n_hidden = 5000
+    n_hidden_syns = 6000
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
     hidden_neurons = [Neuron(t_0+time_step_sim) for i in range(n_hidden)]
 
@@ -273,10 +273,10 @@ def create_neuron_synapse_networkx():
         else:
             hidden_syn = Synapse(t_0+time_step_sim, w_i, E_i, tau_i, pre_neuron, post_neuron, "inh")
         G.add_edge(pre_neuron, post_neuron, syn=hidden_syn)
-    layout = nx.spring_layout(G)
-    nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if G.nodes[u]['input'] else 'k' for u in G.nodes], node_size=50, with_labels=False)
-    plt.savefig("network_topo.png")
-    plt.close()
+    #layout = nx.spring_layout(G)
+    #nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if G.nodes[u]['input'] else 'k' for u in G.nodes], node_size=50, with_labels=False)
+    #plt.savefig("network_topo.png")
+    #plt.close()
     return G
 
 
