@@ -100,9 +100,7 @@ class Neuron:
         syn_input_tt = 0
         g_tts = jnp.asarray([syn.g_tt for syn in synapses], dtype=float)
         E_syns = jnp.asarray([sa.E_syn for sa in synapses_attributes], dtype=float)
-        # TODO: bug in syns_logits cannot be abtained from adjmatrix
         syn_input_tt = jnp.sum(g_tts * (E_syns - self.V_tt) * in_syns_logits)
-        print(len(E_syns), len(in_syns_logits))
         # integrate the membrane voltage equation
         V = euler_integration(self.func_V, syn_input_tt, self.V_tt, self.tt, self.delta_t)
         V_tt = jnp.where(V < self.V_thresh, V, self.V_reset)
@@ -308,11 +306,15 @@ def create_neuron_synapse_networkx():
         else:
             syns.append(Synapse(t_0+time_step_sim, w_i))
             syns_attrs.append(SynapseAttributes(pre_neuron_idx, post_neuron_idx, E_i, tau_i))
+    neurons_in_syns_logits = np.zeros([n_neurons, len(G.edges)])
+    for i in range(len(G.nodes)):
+        for s in G.predecessors(i):
+            neurons_in_syns_logits[i, s] = 1
     layout = nx.spring_layout(G)
     nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
     plt.savefig("network_topo.png")
     plt.close()
-    return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), nx.to_numpy_matrix(G), syns_attrs
+    return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), neurons_in_syns_logits, syns_attrs
 
 # not jax, avoid pytree copies
 def update_input(time_step_sim, input_neurons):
@@ -320,9 +322,9 @@ def update_input(time_step_sim, input_neurons):
 
 def sim_jit():
     static_attributes = StaticAttributes()
-    neurons, syns, hidden_neurons, input_neurons, adj_matrix, syns_attrs = create_neuron_synapse_networkx()
+    neurons, syns, hidden_neurons, input_neurons, neurons_in_syns_logits, syns_attrs = create_neuron_synapse_networkx()
     def step(tt, hidden_neurons, syns, input_neurons):
-        hidden_neurons_ = list(hidden_neurons[i].tick(time_step_sim, syns, adj_matrix[:, i], syns_attrs, static_attributes) for i in range(len(hidden_neurons)))
+        hidden_neurons_ = list(hidden_neurons[i].tick(time_step_sim, syns, neurons_in_syns_logits[i], syns_attrs, static_attributes) for i in range(len(hidden_neurons)))
         syns_ = list(syns[i].tick(time_step_sim, hidden_neurons + input_neurons, static_attributes, syns_attrs[i]) for i in range(len(syns)))
         return (tt + time_step_sim, hidden_neurons_, syns_)
 
@@ -344,7 +346,7 @@ def sim_jit():
         tik = time.time()
         input_neurons_pytree = update_input(time_step_sim, input_neurons)
 
-        tt, hidden_neurons, syns = step(tt, hidden_neurons, syns, input_neurons_pytree)
+        tt, hidden_neurons, syns = step_jit(tt, hidden_neurons, syns, input_neurons_pytree)
         print(time.time() - tik)
         # record the synapse weights
         w_e_storage[counter_storage,:] = [syn.w_tt for syn in syns]
