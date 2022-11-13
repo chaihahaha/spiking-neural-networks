@@ -152,10 +152,6 @@ class Synapse:
         # where ts is the spiking time of its pre-neuron
         self.func_g = lambda g_tt, tau_syn: -g_tt/tau_syn
 
-    def pre_spiking(self, time_step_sim, pre_neuron):
-        return self.tt - time_step_sim <= pre_neuron.last_spike < self.tt + time_step_sim
-    def post_spiking(self, time_step_sim, post_neuron):
-        return self.tt - time_step_sim <= post_neuron.last_spike < self.tt + time_step_sim
     def tick(self, time_step_sim, neurons):
         g_tt = self.g_tt
         last_spikes = jnp.asarray([n.last_spike for n in neurons])
