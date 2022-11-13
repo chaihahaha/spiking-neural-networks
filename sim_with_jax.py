@@ -8,7 +8,6 @@ from Correlated_Spike_Trains import Correlated_Trains
 import matplotlib.pyplot as plt
 import networkx as nx
 import time
-from typing import Type
 
 tau_mem       = Parameters_Int_and_Fire.tau_mem
 E_leak        = Parameters_Int_and_Fire.E_leak
