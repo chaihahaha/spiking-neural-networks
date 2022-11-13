@@ -266,7 +266,7 @@ def one_hot(i, n):
     a[i] =1
     return a
 def create_neuron_synapse_networkx():
-    n_hidden = 20
+    n_hidden = 100
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
@@ -293,12 +293,23 @@ def create_neuron_synapse_networkx():
     syns = []
     syns_attrs = []
     for pre_neuron_idx, post_neuron_idx in G.edges:
-        if pre_neuron_idx < n_hidden + numb_exc_syn:
+        if pre_neuron_idx < n_hidden:
+            if np.random.rand() < 0.8:
+                syns.append(Synapse(t_0+time_step_sim, w_e))
+                syns_attrs.append(SynapseAttributes(pre_neuron_idx, post_neuron_idx, E_e, tau_e))
+            else:
+                syns.append(Synapse(t_0+time_step_sim, w_i))
+                syns_attrs.append(SynapseAttributes(pre_neuron_idx, post_neuron_idx, E_i, tau_i))
+        elif pre_neuron_idx < n_hidden + numb_exc_syn:
             syns.append(Synapse(t_0+time_step_sim, w_e))
             syns_attrs.append(SynapseAttributes(pre_neuron_idx, post_neuron_idx, E_e, tau_e))
         else:
             syns.append(Synapse(t_0+time_step_sim, w_i))
             syns_attrs.append(SynapseAttributes(pre_neuron_idx, post_neuron_idx, E_i, tau_i))
+    layout = nx.spring_layout(G)
+    nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
+    plt.savefig("network_topo.png")
+    plt.close()
     return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), nx.to_numpy_matrix(G), syns_attrs
 
 # not jax, avoid pytree copies
