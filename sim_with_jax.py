@@ -77,11 +77,11 @@ class StaticAttributes:
 
 @register_pytree_node_class
 class Neuron:
-    def __init__(self, init_tt, init_last_spike, init_V_tt=-70.):
-        self.tt = init_tt
-        self.V_tt = init_V_tt         # membrane voltage
+    def __init__(self, init_tt: float, init_last_spike: float, init_V_tt: float=-70.):
+        self.tt = jnp.array(init_tt, float)
+        self.V_tt = jnp.array(init_V_tt, float)         # membrane voltage
 
-        self.last_spike = init_last_spike     # the time when this neuron last spiked
+        self.last_spike = jnp.array(init_last_spike, float)     # the time when this neuron last spiked
 
         # define function to integrate the membrane voltage equation
         # the function f(V_tt) for the simplified membrane voltage equation: d V_tt / dtt = f(V_tt)
@@ -119,7 +119,7 @@ class Neuron:
 @register_pytree_node_class
 class InputNeuronPytree:
     def __init__(self, input_neuron):
-        self.last_spike = input_neuron.last_spike
+        self.last_spike = jnp.array(input_neuron.last_spike, float)
     def tree_flatten(self):
         children = (self.last_spike,)
         aux_data = None
@@ -131,15 +131,15 @@ class InputNeuronPytree:
 
 class InputNeuron:
     def __init__(self, init_tt, last_spike, next_spike_idx, spike_train):
-        self.tt = init_tt
+        self.tt = jnp.array(init_tt, float)
         self.spike_train = spike_train # the prescribed spike train of this input neuron
 
         # the last time when this neuron spiked
         # this signal will be used for the conductance calculation of its synapses
-        self.last_spike = last_spike
+        self.last_spike = jnp.array(last_spike, float)
 
         # the next index of the spike in the spike train which is ready for spiking
-        self.next_spike_idx = next_spike_idx
+        self.next_spike_idx = jnp.array(next_spike_idx, int)
     def tick(self, time_step_sim):
         while self.past_spike(self.next_spike_idx, self.tt, time_step_sim) and self.next_spike_idx < len(self.spike_train)-1:
             # if sim interval went past current spike, proceed to the next spike
@@ -148,6 +148,7 @@ class InputNeuron:
             # if the next spike is ready for spiking (covered in current simulation time interval)
             # then record it as the last spike time
             self.last_spike = self.spike_train[self.next_spike_idx]
+        self.tt += time_step_sim
         return InputNeuronPytree(self)
     def cover_spike(self, idx, tt, time_step_sim):
         return tt <= self.spike_train[idx] < tt + time_step_sim
@@ -158,11 +159,11 @@ class InputNeuron:
 
 @register_pytree_node_class
 class SynapseAttributes:
-    def __init__(self, pre_neuron_idx, post_neuron_idx, E_syn, tau_syn):
-        self.pre_neuron_idx = pre_neuron_idx           # the previous neuron this synapse connects from
-        self.post_neuron_idx = post_neuron_idx         # the post neuron this synapse connects to
-        self.E_syn = E_syn                   # synapse type: excitatory or inhibitory
-        self.tau_syn = tau_syn                   # synapse type: excitatory or inhibitory
+    def __init__(self, pre_neuron_idx: int, post_neuron_idx: int, E_syn: float, tau_syn: float):
+        self.pre_neuron_idx = jnp.array(pre_neuron_idx, int)           # the previous neuron this synapse connects from
+        self.post_neuron_idx = jnp.array(post_neuron_idx, int)         # the post neuron this synapse connects to
+        self.E_syn = jnp.array(E_syn, float)                   # synapse type: excitatory or inhibitory
+        self.tau_syn = jnp.array(tau_syn, float)                   # synapse type: excitatory or inhibitory
 
     def tree_flatten(self):
         children = (self.pre_neuron_idx, self.post_neuron_idx, self.E_syn, self.tau_syn)
@@ -174,10 +175,10 @@ class SynapseAttributes:
 
 @register_pytree_node_class
 class Synapse:
-    def __init__(self, init_tt, init_w_tt, init_g_tt=0.):
-        self.tt = init_tt                      # current time
-        self.g_tt = init_g_tt                  # synapse conductance
-        self.w_tt = init_w_tt                  # synapse weight
+    def __init__(self, init_tt: float, init_w_tt: float, init_g_tt: float=0.):
+        self.tt = jnp.array(init_tt, float)                      # current time
+        self.g_tt = jnp.array(init_g_tt, float)                  # synapse conductance
+        self.w_tt = jnp.array(init_w_tt, float)                  # synapse weight
 
         
         # define function to integrate the synapse conductance equation
