@@ -88,7 +88,7 @@ class Neuron:
         # whose full form is: tau_mem * d V_tt / dtt = E_leak - V_tt + g_e * (E_e - V_tt) + g_i * (E_i - V_tt)
         self.func_V = lambda V_tt, syn_input_tt: (self.E_leak - V_tt + syn_input_tt)/self.tau_mem
 
-    def tick(self, time_step_sim, synapses, in_syns_logits, synapses_attributes, static_attributes):
+    def tick(self, time_step_sim, synapses, in_syns, synapses_attributes, static_attributes):
         self.tau_mem = static_attributes.tau_mem        # membrane time constant
         self.E_leak = static_attributes.E_leak          # reversal potential for the leak
         self.V_thresh = static_attributes.V_thresh      # membrane voltage threshold, V_tt will be reset to V_reset after reaching this threshold
@@ -100,7 +100,7 @@ class Neuron:
         syn_input_tt = 0
         g_tts = jnp.asarray([syn.g_tt for syn in synapses], dtype=float)
         E_syns = jnp.asarray([sa.E_syn for sa in synapses_attributes], dtype=float)
-        syn_input_tt = jnp.sum(g_tts * (E_syns - self.V_tt) * in_syns_logits)
+        syn_input_tt = jnp.sum(jnp.asarray([jnp.take(g_tts, i) * (jnp.take(E_syns, i) - self.V_tt) for i in in_syns]))
         # integrate the membrane voltage equation
         V = euler_integration(self.func_V, syn_input_tt, self.V_tt, self.tt, self.delta_t)
         V_tt = jnp.where(V < self.V_thresh, V, self.V_reset)
@@ -266,7 +266,7 @@ def one_hot(i, n):
     a[i] =1
     return a
 def create_neuron_synapse_networkx():
-    n_hidden = 30
+    n_hidden = 10
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
@@ -306,15 +306,14 @@ def create_neuron_synapse_networkx():
         else:
             syns.append(Synapse(t_0+time_step_sim, w_i))
             syns_attrs.append(SynapseAttributes(pre_neuron_idx, post_neuron_idx, E_i, tau_i))
-    neurons_in_syns_logits = np.zeros([n_neurons, len(G.edges)])
+    neurons_in_syns = []
     for i in range(len(G.nodes)):
-        for s in G.predecessors(i):
-            neurons_in_syns_logits[i, s] = 1
+        neurons_in_syns.append(G.predecessors(i))
     layout = nx.spring_layout(G)
     nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
     plt.savefig("network_topo.png")
     plt.close()
-    return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), neurons_in_syns_logits, syns_attrs
+    return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), neurons_in_syns, syns_attrs
 
 # not jax, avoid pytree copies
 def update_input(time_step_sim, input_neurons):
@@ -322,9 +321,9 @@ def update_input(time_step_sim, input_neurons):
 
 def sim_jit():
     static_attributes = StaticAttributes()
-    neurons, syns, hidden_neurons, input_neurons, neurons_in_syns_logits, syns_attrs = create_neuron_synapse_networkx()
+    neurons, syns, hidden_neurons, input_neurons, neurons_in_syns, syns_attrs = create_neuron_synapse_networkx()
     def step(tt, hidden_neurons, syns, input_neurons):
-        hidden_neurons_ = list(hidden_neurons[i].tick(time_step_sim, syns, neurons_in_syns_logits[i], syns_attrs, static_attributes) for i in range(len(hidden_neurons)))
+        hidden_neurons_ = list(hidden_neurons[i].tick(time_step_sim, syns, neurons_in_syns[i], syns_attrs, static_attributes) for i in range(len(hidden_neurons)))
         syns_ = list(syns[i].tick(time_step_sim, hidden_neurons + input_neurons, static_attributes, syns_attrs[i]) for i in range(len(syns)))
         return (tt + time_step_sim, hidden_neurons_, syns_)
 
