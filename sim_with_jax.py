@@ -335,7 +335,7 @@ def sim_jit():
     w_e_storage[0, :] = [syn.w_tt for syn in syns]
     counter_storage = 1
 
-    step_jit = jax.jit(step, static_argnums=1) # static argnums could be removed?
+    step_jit = jax.jit(step) # static argnums could be removed?
     while tt <= t_max:
         print("starting update input neurons")
         update_input(time_step_sim, input_neurons)
