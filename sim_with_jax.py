@@ -100,7 +100,9 @@ class Neuron:
         syn_input_tt = 0
         g_tts = jnp.asarray([syn.g_tt for syn in synapses], dtype=float)
         E_syns = jnp.asarray([sa.E_syn for sa in synapses_attributes], dtype=float)
+        # TODO: bug in syns_logits cannot be abtained from adjmatrix
         syn_input_tt = jnp.sum(g_tts * (E_syns - self.V_tt) * in_syns_logits)
+        print(len(E_syns), len(in_syns_logits))
         # integrate the membrane voltage equation
         V = euler_integration(self.func_V, syn_input_tt, self.V_tt, self.tt, self.delta_t)
         V_tt = jnp.where(V < self.V_thresh, V, self.V_reset)
@@ -266,7 +268,7 @@ def one_hot(i, n):
     a[i] =1
     return a
 def create_neuron_synapse_networkx():
-    n_hidden = 100
+    n_hidden = 30
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
@@ -342,7 +344,7 @@ def sim_jit():
         tik = time.time()
         input_neurons_pytree = update_input(time_step_sim, input_neurons)
 
-        tt, hidden_neurons, syns = step_jit(tt, hidden_neurons, syns, input_neurons_pytree)
+        tt, hidden_neurons, syns = step(tt, hidden_neurons, syns, input_neurons_pytree)
         print(time.time() - tik)
         # record the synapse weights
         w_e_storage[counter_storage,:] = [syn.w_tt for syn in syns]
