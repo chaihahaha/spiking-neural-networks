@@ -231,8 +231,8 @@ def create_neuron_synapse():
     return all_neurons, all_syns
 
 def create_neuron_synapse_networkx():
-    n_hidden = 20
-    n_hidden_syns = 100
+    n_hidden = 40
+    n_hidden_syns = 140
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
     hidden_neurons = [Neuron(t_0+time_step_sim) for i in range(n_hidden)]
 
@@ -265,6 +265,7 @@ def create_neuron_synapse_networkx():
         pre_neuron = np.random.choice(hidden_neurons)
         post_neuron = np.random.choice(hidden_neurons)
         while G.has_edge(pre_neuron, post_neuron) or G.has_edge(post_neuron, pre_neuron) or pre_neuron == post_neuron:
+            assert len(G.edges) < len(G.nodes) * (len(G.nodes) - 1) // 2
             pre_neuron = np.random.choice(hidden_neurons)
             post_neuron = np.random.choice(hidden_neurons)
         if np.random.rand() < 0.8:
@@ -341,11 +342,13 @@ def sim_networkx():
     counter_storage = 1
 
     while tt <= t_max:
+        tik = time.time()
         for neuron in all_neurons:
             neuron.tick(time_step_sim)
         for syn in all_syns:
             syn.tick(time_step_sim)
         tt += time_step_sim
+        print(time.time() - tik)
 
         # record the synapse weights
         w_e_storage[counter_storage,:] = [syn.w_tt for syn in all_syns]

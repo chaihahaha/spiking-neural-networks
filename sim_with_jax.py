@@ -131,15 +131,15 @@ class InputNeuronPytree:
 
 class InputNeuron:
     def __init__(self, init_tt, last_spike, next_spike_idx, spike_train):
-        self.tt = jnp.array(init_tt, float)
+        self.tt = init_tt
         self.spike_train = spike_train # the prescribed spike train of this input neuron
 
         # the last time when this neuron spiked
         # this signal will be used for the conductance calculation of its synapses
-        self.last_spike = jnp.array(last_spike, float)
+        self.last_spike = last_spike
 
         # the next index of the spike in the spike train which is ready for spiking
-        self.next_spike_idx = jnp.array(next_spike_idx, int)
+        self.next_spike_idx = next_spike_idx
     def tick(self, time_step_sim):
         while self.past_spike(self.next_spike_idx, self.tt, time_step_sim) and self.next_spike_idx < len(self.spike_train)-1:
             # if sim interval went past current spike, proceed to the next spike
@@ -271,7 +271,9 @@ def create_neuron_synapse_networkx():
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
 
-    G = nx.gnp_random_graph(n_neurons, 0.4, directed=True)
+    G = nx.gnp_random_graph(n_neurons, 0.05, directed=True)
+    print("n neurons:",len(G.nodes))
+    print("n syns:",len(G.edges))
     assert len(G.edges) > n_input
     neurons = []
     input_neurons = []
@@ -307,9 +309,7 @@ def sim_jit():
     static_attributes = StaticAttributes()
     neurons, syns, hidden_neurons, input_neurons, adj_matrix, syns_attrs = create_neuron_synapse_networkx()
     def step(tt, hidden_neurons, syns, input_neurons):
-        print("stepping neurons")
         hidden_neurons_ = list(hidden_neurons[i].tick(time_step_sim, syns, adj_matrix[:, i], syns_attrs, static_attributes) for i in range(len(hidden_neurons)))
-        print("stepping syns")
         syns_ = list(syns[i].tick(time_step_sim, hidden_neurons + input_neurons, static_attributes, syns_attrs[i]) for i in range(len(syns)))
         return (tt + time_step_sim, hidden_neurons_, syns_)
 
@@ -326,15 +326,13 @@ def sim_jit():
     counter_storage = 1
 
     step_jit = jax.jit(step) # static argnums could be removed?
-    print([n.tt for n in input_neurons])
+    start_time = time.time()
     while tt <= t_max:
-        print("starting update input neurons")
+        tik = time.time()
         input_neurons_pytree = update_input(time_step_sim, input_neurons)
-        print([n.tt for n in input_neurons])
-        print("starting step neurons and syns")
+
         tt, hidden_neurons, syns = step_jit(tt, hidden_neurons, syns, input_neurons_pytree)
-        print([n.tt for n in hidden_neurons])
-        print([s.tt for s in syns])
+        print(time.time() - tik)
         # record the synapse weights
         w_e_storage[counter_storage,:] = [syn.w_tt for syn in syns]
         counter_storage += 1
@@ -347,7 +345,8 @@ def sim_jit():
             if tt%1000==0:
                 FR_vec[i].append(number_spikes[i])
                 number_spikes[i] = 0
-        print(tt)
+    print("#neuron:", len(neurons),"#syn:",  len(syns))
+    print("total time:", time.time() - start_time)
     fig, ax = plt.subplots()
     ax.plot(FR_vec)
     fig.savefig("firing_rate_nx.png")
