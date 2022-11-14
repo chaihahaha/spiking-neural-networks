@@ -8,6 +8,7 @@ from Correlated_Spike_Trains import Correlated_Trains
 import matplotlib.pyplot as plt
 import networkx as nx
 import time
+#jax.config.update('jax_platform_name', 'cpu')
 
 tau_mem       = Parameters_Int_and_Fire.tau_mem
 E_leak        = Parameters_Int_and_Fire.E_leak
@@ -40,13 +41,11 @@ tau_c         = Parameters_Int_and_Fire.tau_c
 
 n=int(round(time_step_sim/delta_t)) # calculate the number of steps
 def euler_integration(f, arg_for_f, y_0, t_0, delta_t):
-    for step in range(1,n+1):
+    def euler_step(y_0, step):
         m=f(y_0, arg_for_f)
         y_1=y_0+delta_t*m
-        t_1=t_0+delta_t
-        t_0=t_1
-        y_0=y_1
-    return y_0
+        return y_1, 0
+    return jax.lax.scan(euler_step, y_0, jnp.arange(1,n+1))[0]
 
 
 @register_pytree_node_class
@@ -266,12 +265,12 @@ def one_hot(i, n):
     a[i] =1
     return a
 def create_neuron_synapse_networkx():
-    n_hidden = 5000
+    n_hidden = 100
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
 
-    G = nx.gnp_random_graph(n_neurons, 0.0003, directed=True)
+    G = nx.gnp_random_graph(n_neurons, 0.03, directed=True)
     print("n neurons:",len(G.nodes))
     print("n syns:",len(G.edges))
     assert len(G.edges) > n_input
