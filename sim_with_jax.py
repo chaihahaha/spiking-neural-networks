@@ -251,12 +251,12 @@ def one_hot(i, n):
     a[i] =1
     return a
 def create_neuron_synapse_networkx():
-    n_hidden = 100
+    n_hidden = 1000
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
 
-    G = nx.gnp_random_graph(n_neurons, 0.03, directed=True)
+    G = nx.gnp_random_graph(n_neurons, 0.003, directed=True)
     print("n neurons:",len(G.nodes))
     print("n syns:",len(G.edges))
     assert len(G.edges) > n_input
