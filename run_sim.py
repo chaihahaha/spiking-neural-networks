@@ -231,8 +231,8 @@ def create_neuron_synapse():
     return all_neurons, all_syns
 
 def create_neuron_synapse_networkx():
-    n_hidden = 5000
-    n_hidden_syns = 6000
+    n_hidden = 20
+    n_hidden_syns = 100
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
     hidden_neurons = [Neuron(t_0+time_step_sim) for i in range(n_hidden)]
 
@@ -375,7 +375,8 @@ def sim_networkx():
     fig1.savefig('STDP_correl_nx.png')
 
 if __name__ == "__main__":
-    tik = time.time()
-    sim_networkx()
-    tok = time.time()
-    print(tok - tik)
+    print("正在仿真实验1...")
+    sim()              # 实验1
+
+    print("正在仿真实验2...")
+    sim_networkx()     # 实验2
