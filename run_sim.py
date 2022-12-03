@@ -76,7 +76,8 @@ class Neuron:
         # sum all the synapse inputs
         syn_input_tt = sum([syn.g_tt * (syn.E_syn - self.V_tt) for syn in self.synapses])
         # integrate the membrane voltage equation
-        V = self.euler.euler_integration(self.func_V, syn_input_tt, self.V_tt, self.tt, time_step_sim, self.delta_t)
+        #V = self.euler.euler_integration(self.func_V, syn_input_tt, self.V_tt, self.tt, time_step_sim, self.delta_t)
+        V = (self.V_tt - self.E_leak - syn_input_tt) * np.exp(-time_step_sim / self.tau_mem) + self.E_leak + syn_input_tt
         if V < self.V_thresh:
             self.V_tt = V
         else:
@@ -152,7 +153,7 @@ class Synapse:
             self.g_tt += self.w_tt
 
         # integrate the synapse conductance equation
-        self.g_tt = self.euler.euler_integration(self.func_g, self.tau_syn, self.g_tt, self.tt, time_step_sim, self.delta_t)
+        self.g_tt = self.g_tt * np.exp(- time_step_sim / self.tau_syn)
         if self.type == "exc" and (self.pre_spiking(time_step_sim) or self.post_spiking(time_step_sim)):
             # if the pre neuron or post neuron is spiking, then apply STDP rules to update weights
             self.STDP()

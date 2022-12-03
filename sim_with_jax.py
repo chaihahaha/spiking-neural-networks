@@ -8,7 +8,6 @@ from Correlated_Spike_Trains import Correlated_Trains
 import matplotlib.pyplot as plt
 import networkx as nx
 import time
-#jax.config.update('jax_platform_name', 'cpu')
 
 tau_mem       = Parameters_Int_and_Fire.tau_mem
 E_leak        = Parameters_Int_and_Fire.E_leak
@@ -85,9 +84,8 @@ class Neuron:
         # define function to integrate the membrane voltage equation
         # the function f(V_tt) for the simplified membrane voltage equation: d V_tt / dtt = f(V_tt)
         # whose full form is: tau_mem * d V_tt / dtt = E_leak - V_tt + g_e * (E_e - V_tt) + g_i * (E_i - V_tt)
-        self.func_V = lambda V_tt, syn_input_tt: (self.E_leak - V_tt + syn_input_tt)/self.tau_mem
 
-    def tick(self, time_step_sim, synapses, in_syns, synapses_attributes, static_attributes):
+    def tick(self, time_step_sim, synapses, in_syns_logits, synapses_attributes, static_attributes):
         self.tau_mem = static_attributes.tau_mem        # membrane time constant
         self.E_leak = static_attributes.E_leak          # reversal potential for the leak
         self.V_thresh = static_attributes.V_thresh      # membrane voltage threshold, V_tt will be reset to V_reset after reaching this threshold
@@ -99,9 +97,9 @@ class Neuron:
         syn_input_tt = 0
         g_tts = jnp.asarray([syn.g_tt for syn in synapses], dtype=float)
         E_syns = jnp.asarray([sa.E_syn for sa in synapses_attributes], dtype=float)
-        syn_input_tt = jnp.sum(jnp.asarray([jnp.take(g_tts, i) * (jnp.take(E_syns, i) - self.V_tt) for i in in_syns]))
+        syn_input_tt = jnp.sum(g_tts * (E_syns - self.V_tt) * in_syns_logits)
         # integrate the membrane voltage equation
-        V = euler_integration(self.func_V, syn_input_tt, self.V_tt, self.tt, self.delta_t)
+        V = (self.V_tt - self.E_leak - syn_input_tt) * jnp.exp(-time_step_sim / self.tau_mem) + self.E_leak + syn_input_tt
         V_tt = jnp.where(V < self.V_thresh, V, self.V_reset)
         last_spike = jnp.where(V < self.V_thresh, self.last_spike, self.tt)
         return Neuron(self.tt + time_step_sim, last_spike, V_tt)
@@ -113,6 +111,20 @@ class Neuron:
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         return cls(*children)
+
+
+@register_pytree_node_class
+class InputNeuronPytree:
+    def __init__(self, input_neuron):
+        self.last_spike = jnp.array(input_neuron.last_spike, float)
+    def tree_flatten(self):
+        children = (self.last_spike,)
+        aux_data = None
+        return (children, aux_data)
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        neuron = InputNeuron(0, *children, 0, [])
+        return cls(neuron)
 
 class InputNeuron:
     def __init__(self, init_tt, last_spike, next_spike_idx, spike_train):
@@ -134,7 +146,7 @@ class InputNeuron:
             # then record it as the last spike time
             self.last_spike = self.spike_train[self.next_spike_idx]
         self.tt += time_step_sim
-        return
+        return InputNeuronPytree(self)
     def cover_spike(self, idx, tt, time_step_sim):
         return tt <= self.spike_train[idx] < tt + time_step_sim
     def past_spike(self, idx, tt, time_step_sim):
@@ -197,7 +209,7 @@ class Synapse:
         g_tt += self.w_tt * pre_spiked
 
         # integrate the synapse conductance equation
-        g_tt = euler_integration(self.func_g, self.tau_syn, g_tt, self.tt, self.delta_t)
+        g_tt = g_tt * jnp.exp(- time_step_sim / self.tau_syn)
         # if the pre neuron or post neuron is spiking, then apply STDP rules to update weights
         w_STDP = self.STDP(pre_spike, post_spike)
         # logic OR in jnp
@@ -251,12 +263,12 @@ def one_hot(i, n):
     a[i] =1
     return a
 def create_neuron_synapse_networkx():
-    n_hidden = 1000
+    n_hidden = 100
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_hidden + n_input
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
 
-    G = nx.gnp_random_graph(n_neurons, 0.003, directed=True)
+    G = nx.gnp_random_graph(n_neurons, 0.05, directed=True)
     print("n neurons:",len(G.nodes))
     print("n syns:",len(G.edges))
     assert len(G.edges) > n_input
@@ -291,56 +303,27 @@ def create_neuron_synapse_networkx():
         else:
             syns.append(Synapse(t_0+time_step_sim, w_i))
             syns_attrs.append(SynapseAttributes(pre_neuron_idx, post_neuron_idx, E_i, tau_i))
-    neurons_in_syns = []
+    neurons_in_syns_logits = np.zeros([n_neurons, len(G.edges)])
     for i in range(len(G.nodes)):
-        neurons_in_syns.append(G.predecessors(i))
+        for s in G.predecessors(i):
+            neurons_in_syns_logits[i, s] = 1
     #layout = nx.spring_layout(G)
     #nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
     #plt.savefig("network_topo.png")
     #plt.close()
-    return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), neurons_in_syns, syns_attrs
+    return list(neurons), list(syns), list(hidden_neurons), list(input_neurons), neurons_in_syns_logits, syns_attrs
 
 # not jax, avoid pytree copies
 def update_input(time_step_sim, input_neurons):
-    for n in input_neurons:
-        n.tick(time_step_sim) 
-    return
+    return list(n.tick(time_step_sim) for n in input_neurons)
 
-def encode_hidden_neurons(neurons):
-    tt = jnp.asarray([n.tt for n in neurons])
-    last_spike = jnp.asarray([n.last_spike for n in neurons])
-    V_tt = jnp.asarray([n.V_tt for n in neurons])
-    jnp_neurons = (tt, last_spike, V_tt)
-    return jnp_neurons
-def decode_hidden_neurons(jnp_neurons):
-    return [Neuron(jnp_neurons[0][i], jnp_neurons[1][i], jnp_neurons[2][i]) for i in range(len(jnp_neurons[0]))]
-def encode_input_neurons(neurons):
-    last_spike = jnp.asarray([n.last_spike for n in neurons])
-    return last_spike
-def decode_input_neurons(jnp_neurons):
-    return [Neuron(0, jnp_neurons[i], 0) for i in range(len(jnp_neurons))]
-def encode_syns(syns):
-    tt = jnp.asarray([s.tt for s in syns])
-    w_tt = jnp.asarray([s.w_tt for s in syns])
-    g_tt = jnp.asarray([s.g_tt for s in syns])
-    jnp_syns =  tt, w_tt, g_tt
-    return jnp_syns
-def decode_syns(jnp_syns):
-    return [Synapse(jnp_syns[0][i], jnp_syns[1][i], jnp_syns[2][i]) for i in range(len(jnp_syns[0]))]
 def sim_jit():
     static_attributes = StaticAttributes()
-    neurons, syns, hidden_neurons, input_neurons, neurons_in_syns, syns_attrs = create_neuron_synapse_networkx()
-    def step(tt, hidden_neurons_jnp, syns_jnp, input_neurons_jnp):
-        hidden_neurons = decode_hidden_neurons(hidden_neurons_jnp)
-        syns = decode_syns(syns_jnp)
-        input_neurons = decode_input_neurons(input_neurons_jnp)
-
-        hidden_neurons_ = list(hidden_neurons[i].tick(time_step_sim, syns, neurons_in_syns[i], syns_attrs, static_attributes) for i in range(len(hidden_neurons)))
+    neurons, syns, hidden_neurons, input_neurons, neurons_in_syns_logits, syns_attrs = create_neuron_synapse_networkx()
+    def step(tt, hidden_neurons, syns, input_neurons):
+        hidden_neurons_ = list(hidden_neurons[i].tick(time_step_sim, syns, neurons_in_syns_logits[i], syns_attrs, static_attributes) for i in range(len(hidden_neurons)))
         syns_ = list(syns[i].tick(time_step_sim, hidden_neurons + input_neurons, static_attributes, syns_attrs[i]) for i in range(len(syns)))
-
-        hidden_neurons_jnp_ = encode_hidden_neurons(hidden_neurons_)
-        syns_jnp_ = encode_syns(syns_)
-        return (tt + time_step_sim, hidden_neurons_jnp_, syns_jnp_)
+        return (tt + time_step_sim, hidden_neurons_, syns_)
 
 
     n_syns = len(syns)
@@ -358,17 +341,9 @@ def sim_jit():
     start_time = time.time()
     while tt <= t_max:
         tik = time.time()
-        update_input(time_step_sim, input_neurons)
+        input_neurons_pytree = update_input(time_step_sim, input_neurons)
 
-        hidden_neurons_jnp = encode_hidden_neurons(hidden_neurons)
-        syns_jnp = encode_syns(syns)
-        input_neurons_jnp = encode_input_neurons(input_neurons)
-
-        tt, hidden_neurons_jnp, syns_jnp = step_jit(tt, hidden_neurons_jnp, syns_jnp, input_neurons_jnp)
-
-        hidden_neurons = decode_hidden_neurons(hidden_neurons_jnp)
-        syns = decode_syns(syns_jnp)
-
+        tt, hidden_neurons, syns = step_jit(tt, hidden_neurons, syns, input_neurons_pytree)
         print(time.time() - tik)
         # record the synapse weights
         w_e_storage[counter_storage,:] = [syn.w_tt for syn in syns]
