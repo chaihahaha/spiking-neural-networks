@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-from jax.tree_util import register_pytree_node_class
 import numpy as np
 import Parameters_Int_and_Fire
 from Poisson_Spike_Trains import Poisson_Trains
@@ -38,19 +37,6 @@ c1            = Parameters_Int_and_Fire.c1
 c2            = Parameters_Int_and_Fire.c2
 tau_c         = Parameters_Int_and_Fire.tau_c
 
-@register_pytree_node_class
-class InputNeuronPytree:
-    def __init__(self, input_neuron):
-        self.last_spike = jnp.array(input_neuron.last_spike, float)
-    def tree_flatten(self):
-        children = (self.last_spike,)
-        aux_data = None
-        return (children, aux_data)
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        neuron = InputNeuron(0, *children, 0, [])
-        return cls(neuron)
-
 class InputNeuron:
     def __init__(self, init_tt, last_spike, next_spike_idx, spike_train):
         self.tt = init_tt
@@ -71,7 +57,7 @@ class InputNeuron:
             # then record it as the last spike time
             self.last_spike = self.spike_train[self.next_spike_idx]
         self.tt += time_step_sim
-        return InputNeuronPytree(self)
+        return
     def cover_spike(self, idx, tt, time_step_sim):
         return tt <= self.spike_train[idx] < tt + time_step_sim
     def past_spike(self, idx, tt, time_step_sim):
@@ -180,12 +166,16 @@ def generate_spike_trains():
     spike_trains_complete_i = list_of_all_spike_trains1 + list_of_all_spike_trains2
     return spike_trains_complete_e, spike_trains_complete_i
 def create_neuron_synapse_networkx():
-    n_hidden = 20
+    n_hidden = 10
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_input + n_hidden
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
 
     G = nx.gnp_random_graph(n_neurons, 0.05, directed=True)
+    for i_input in range(n_input):
+        if not G[i_input]:
+            i_hidden = np.random.choice(np.arange(n_input, n_neurons))
+            G.add_edge(i_input, i_hidden)
     n_synapses = len(G.edges)
     synapses = list(G.edges)
     syn_idx = { synapses[i]: i for i in range(len(synapses)) }
@@ -249,13 +239,11 @@ def create_neuron_synapse_networkx():
 # not jax, avoid pytree copies
 def update_input(time_step_sim, input_neurons, neurons_last_spike):
     neurons_last_spike = np.array(neurons_last_spike)
-    for n in input_neurons:
-        n.tick(time_step_sim)
     for i in range(len(input_neurons)):
         neuron = input_neurons[i]
         neuron.tick(time_step_sim)
         neurons_last_spike[i, 0] = neuron.last_spike
-    return
+    return neurons_last_spike
 
 def sim_jit():
     neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_idx, post_neurons_idx, E_syns, taus_syn, input_neurons, n_neurons, n_synapses = create_neuron_synapse_networkx()
@@ -280,10 +268,12 @@ def sim_jit():
     start_time = time.time()
     while tt <= t_max:
         tik = time.time()
-        update_input(time_step_sim, input_neurons, neurons_last_spike)
+        neurons_last_spike = update_input(time_step_sim, input_neurons, neurons_last_spike)
 
         tt, neurons_last_spike, V_tt, g_tts, w_tts = step_jit(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts)
-        print(time.time() - tik)
+        #print("V_tt", jnp.reshape(V_tt, -1))
+        #print("g_tts", g_tts)
+        #print("w_tts", jnp.reshape(w_tts, -1))
         # record the synapse weights
         w_e_storage[counter_storage,:] = np.reshape(w_tts, -1)
         counter_storage += 1
@@ -296,6 +286,7 @@ def sim_jit():
             if tt%1000==0:
                 FR_vec[i_hidden].append(number_spikes[i_hidden])
                 number_spikes[i_hidden] = 0
+        print(time.time() - tik)
     print("#neuron:", n_neurons,"#syn:",  n_synapses)
     print("total time:", time.time() - start_time)
     fig, ax = plt.subplots()
