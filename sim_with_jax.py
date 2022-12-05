@@ -180,7 +180,7 @@ def generate_spike_trains():
     spike_trains_complete_i = list_of_all_spike_trains1 + list_of_all_spike_trains2
     return spike_trains_complete_e, spike_trains_complete_i
 def create_neuron_synapse_networkx():
-    n_hidden = 100
+    n_hidden = 20
     n_input = numb_exc_syn + numb_inh_syn
     n_neurons = n_input + n_hidden
     spike_trains_complete_e, spike_trains_complete_i = generate_spike_trains()
@@ -259,7 +259,7 @@ def update_input(time_step_sim, input_neurons, neurons_last_spike):
 
 def sim_jit():
     neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_idx, post_neurons_idx, E_syns, taus_syn, input_neurons, n_neurons, n_synapses = create_neuron_synapse_networkx()
-    def step(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_idx, post_neurons_idx, E_syns, taus_syn):
+    def step(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts):
         _, neurons_last_spike, V_tt = neurons_tick(tt, neurons_last_spike, V_tt, time_step_sim, g_tts, E_syns, neurons_in_syns_logits)
         _, w_tts, g_tts = synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neurons_idx, post_neurons_idx, taus_syn)
         return (tt + time_step_sim, neurons_last_spike, V_tt, g_tts, w_tts)
@@ -282,7 +282,7 @@ def sim_jit():
         tik = time.time()
         update_input(time_step_sim, input_neurons, neurons_last_spike)
 
-        tt, neurons_last_spike, V_tt, g_tts, w_tts = step_jit(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_idx, post_neurons_idx, E_syns, taus_syn)
+        tt, neurons_last_spike, V_tt, g_tts, w_tts = step_jit(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts)
         print(time.time() - tik)
         # record the synapse weights
         w_e_storage[counter_storage,:] = np.reshape(w_tts, -1)
@@ -294,7 +294,7 @@ def sim_jit():
             if V_tt[i, 0] == V_reset:
                 number_spikes[i_hidden] += 1
             if tt%1000==0:
-                FR_vec[i].append(number_spikes[i])
+                FR_vec[i_hidden].append(number_spikes[i_hidden])
                 number_spikes[i_hidden] = 0
     print("#neuron:", n_neurons,"#syn:",  n_synapses)
     print("total time:", time.time() - start_time)
