@@ -101,24 +101,21 @@ def neurons_tick(tt, neurons_last_spike, V_tt, time_step_sim, g_tts, E_syns, neu
     neurons_last_spike = jnp.where(V < V_thresh, neurons_last_spike, tt)
     return tt + time_step_sim, neurons_last_spike, V_tt
 
-def synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neurons_idx, post_neurons_idx, taus_syn):
+def synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neurons_logits, post_neurons_logits, taus_syn):
     # S is #synapses, I is #input neurons, H is #hidden neurons
     # g_tts : [ S , 1 ]
     # w_tts : [ S , 1 ]
     # time_step_sim : [0]
     # neurons_last_spike : [ I + H, 1 ]
-    # pre_neurons_idx : [ S, 1 ]
-    # post_neurons_idx : [ S, 1 ]
+    # pre_neurons_logits : [ S, I + H ]
+    # post_neurons_logits : [ S, I + H ]
     # taus_syn : [ S, 1 ]
 
-    pre_spike = jnp.take(neurons_last_spike, pre_neurons_idx)   # [ S, 1 ]
-    post_spike = jnp.take(neurons_last_spike, post_neurons_idx) # [ S, 1 ]
+    pre_spike = pre_neurons_logits @ neurons_last_spike   # [ S, 1 ]
+    post_spike = post_neurons_logits @ neurons_last_spike # [ S, 1 ]
 
-    # logic AND in jnp
-    pre_spiked1 = jnp.where(tt - time_step_sim <= pre_spike, 1, 0)
-    pre_spiked = jnp.where(pre_spike < tt + time_step_sim, pre_spiked1, 0)     # [ S, 1 ]
-    post_spiked1 = jnp.where(tt - time_step_sim <= post_spike, 1, 0)
-    post_spiked = jnp.where(post_spike < tt + time_step_sim, post_spiked1, 0)  # [ S, 1 ]
+    pre_spiked = jnp.abs(pre_spike - tt) < time_step_sim     # [ S, 1 ]
+    post_spiked = jnp.abs(post_spike - tt) < time_step_sim  # [ S, 1 ]
     # if pre-neuron is spiking, then add weight
     g_tts += w_tts * pre_spiked
 
@@ -127,14 +124,15 @@ def synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neuro
     # if the pre neuron or post neuron is spiking, then apply STDP rules to update weights
     w_STDP = STDP(pre_spike, post_spike, w_tts)
     # logic OR in jnp
-    w_tts = jnp.where(pre_spiked, w_STDP, w_tts)
-    w_tts = jnp.where(post_spiked, w_STDP, w_tts)
+    pre_or_post_spiked = 1 - (1 - pre_spiked) * (1 - post_spiked)
+    w_tts = pre_or_post_spiked * w_STDP + (1 - pre_or_post_spiked) * w_tts
     return tt + time_step_sim, w_tts, g_tts
 
 def STDP(pre_spike, post_spike, w_tt):
     # apply Spike-Timing Dependent Plasticity weight update
     Delta_t = pre_spike - post_spike
-    Delta_w_e = jnp.where(Delta_t > 0, jnp.where(Delta_t == 0, jnp.zeros_like(Delta_t), A_postpre * jnp.exp(-Delta_t/tau_postpre)), A_prepost * jnp.exp(Delta_t/tau_prepost))
+    greater_flag = Delta_t > 0
+    Delta_w_e = greater_flag * A_postpre * jnp.exp(-Delta_t/tau_postpre) + (1 - greater_flag) * A_prepost * jnp.exp(Delta_t/tau_prepost)
     w_tt = w_tt + Delta_w_e
     w_tt = jnp.clip(w_tt, 0, w_max)
     return w_tt
@@ -190,8 +188,8 @@ def create_neuron_synapse_networkx():
 
     g_tts = np.zeros([n_synapses, 1], dtype=float)
     w_tts = np.zeros([n_synapses, 1], dtype=float)
-    pre_neurons_idx = np.zeros([n_synapses, 1], dtype=int)
-    post_neurons_idx = np.zeros([n_synapses, 1], dtype=int)
+    pre_neurons_logits = np.zeros([n_synapses, n_neurons], dtype=int)
+    post_neurons_logits = np.zeros([n_synapses, n_neurons], dtype=int)
     E_syns = np.zeros([n_synapses, 1], dtype=float)
     taus_syn = np.zeros([n_synapses, 1], dtype=float)
 
@@ -205,8 +203,8 @@ def create_neuron_synapse_networkx():
     for pre_neuron_idx, post_neuron_idx in G.edges:
         syn = (pre_neuron_idx, post_neuron_idx)
         si = syn_idx[syn]
-        pre_neurons_idx[si, 0] = pre_neuron_idx
-        post_neurons_idx[si, 0] = post_neuron_idx
+        pre_neurons_logits[si, pre_neuron_idx] = 1
+        post_neurons_logits[si, post_neuron_idx] = 1
         if pre_neuron_idx < numb_exc_syn:
             w_tts[si, 0] = w_e
             E_syns[si, 0] = E_e
@@ -234,7 +232,7 @@ def create_neuron_synapse_networkx():
     #nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
     #plt.savefig("network_topo.png")
     #plt.close()
-    return neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_idx, post_neurons_idx, E_syns, taus_syn, input_neurons, n_neurons, n_synapses
+    return neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_logits, post_neurons_logits, E_syns, taus_syn, input_neurons, n_neurons, n_synapses
 
 # not jax, avoid pytree copies
 def update_input(time_step_sim, input_neurons, neurons_last_spike):
@@ -246,10 +244,10 @@ def update_input(time_step_sim, input_neurons, neurons_last_spike):
     return neurons_last_spike
 
 def sim_jit():
-    neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_idx, post_neurons_idx, E_syns, taus_syn, input_neurons, n_neurons, n_synapses = create_neuron_synapse_networkx()
+    neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_logits, post_neurons_logits, E_syns, taus_syn, input_neurons, n_neurons, n_synapses = create_neuron_synapse_networkx()
     def step(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts):
         _, neurons_last_spike, V_tt = neurons_tick(tt, neurons_last_spike, V_tt, time_step_sim, g_tts, E_syns, neurons_in_syns_logits)
-        _, w_tts, g_tts = synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neurons_idx, post_neurons_idx, taus_syn)
+        _, w_tts, g_tts = synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neurons_logits, post_neurons_logits, taus_syn)
         return (tt + time_step_sim, neurons_last_spike, V_tt, g_tts, w_tts)
 
 
