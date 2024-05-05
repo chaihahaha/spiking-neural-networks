@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from jax.experimental import sparse
 import numpy as np
 import Parameters_Int_and_Fire
 from Poisson_Spike_Trains import Poisson_Trains
@@ -232,6 +233,9 @@ def create_neuron_synapse_networkx():
     #nx.draw_networkx(G, pos=layout, arrows=True, node_color=['r' if i>n_hidden else 'k' for i in range(len(G.nodes))], node_size=50, with_labels=False)
     #plt.savefig("network_topo.png")
     #plt.close()
+    pre_neurons_logits = sparse.BCOO.fromdense(pre_neurons_logits)
+    post_neurons_logits = sparse.BCOO.fromdense(post_neurons_logits)
+    #neurons_in_syns_logits = sparse.BCOO.fromdense(neurons_in_syns_logits)
     return neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_logits, post_neurons_logits, E_syns, taus_syn, input_neurons, n_neurons, n_synapses
 
 # not jax, avoid pytree copies
@@ -245,7 +249,7 @@ def update_input(time_step_sim, input_neurons, neurons_last_spike):
 
 def sim_jit():
     neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts, pre_neurons_logits, post_neurons_logits, E_syns, taus_syn, input_neurons, n_neurons, n_synapses = create_neuron_synapse_networkx()
-    def step(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts):
+    def step(tt, neurons_last_spike, V_tt, g_tts, w_tts):
         _, neurons_last_spike, V_tt = neurons_tick(tt, neurons_last_spike, V_tt, time_step_sim, g_tts, E_syns, neurons_in_syns_logits)
         _, w_tts, g_tts = synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neurons_logits, post_neurons_logits, taus_syn)
         return (tt + time_step_sim, neurons_last_spike, V_tt, g_tts, w_tts)
@@ -268,7 +272,7 @@ def sim_jit():
         tik = time.time()
         neurons_last_spike = update_input(time_step_sim, input_neurons, neurons_last_spike)
 
-        tt, neurons_last_spike, V_tt, g_tts, w_tts = step_jit(tt, neurons_last_spike, V_tt, neurons_in_syns_logits, g_tts, w_tts)
+        tt, neurons_last_spike, V_tt, g_tts, w_tts = step_jit(tt, neurons_last_spike, V_tt, g_tts, w_tts)
         #print("V_tt", jnp.reshape(V_tt, -1))
         #print("g_tts", g_tts)
         #print("w_tts", jnp.reshape(w_tts, -1))
