@@ -126,14 +126,13 @@ def synapses_tick(tt, g_tts, w_tts, time_step_sim, neurons_last_spike, pre_neuro
     w_STDP = STDP(pre_spike, post_spike, w_tts)
     # logic OR in jnp
     pre_or_post_spiked = 1 - (1 - pre_spiked) * (1 - post_spiked)
-    w_tts = pre_or_post_spiked * w_STDP + (1 - pre_or_post_spiked) * w_tts
+    w_tts = jnp.where(pre_or_post_spiked, w_STDP, w_tts)
     return tt + time_step_sim, w_tts, g_tts
 
 def STDP(pre_spike, post_spike, w_tt):
     # apply Spike-Timing Dependent Plasticity weight update
     Delta_t = pre_spike - post_spike
-    greater_flag = Delta_t > 0
-    Delta_w_e = greater_flag * A_postpre * jnp.exp(-Delta_t/tau_postpre) + (1 - greater_flag) * A_prepost * jnp.exp(Delta_t/tau_prepost)
+    Delta_w_e = jnp.where(Delta_t > 0, jnp.where(Delta_t == 0, jnp.zeros_like(Delta_t), A_postpre * jnp.exp(-Delta_t/tau_postpre)), A_prepost * jnp.exp(Delta_t/tau_prepost))
     w_tt = w_tt + Delta_w_e
     w_tt = jnp.clip(w_tt, 0, w_max)
     return w_tt
@@ -240,7 +239,7 @@ def create_neuron_synapse_networkx():
 
 # not jax, avoid pytree copies
 def update_input(time_step_sim, input_neurons, neurons_last_spike):
-    neurons_last_spike = np.array(neurons_last_spike)
+    neurons_last_spike = np.asarray(neurons_last_spike).copy()
     for i in range(len(input_neurons)):
         neuron = input_neurons[i]
         neuron.tick(time_step_sim)
@@ -270,7 +269,7 @@ def sim_jit():
     start_time = time.time()
     while tt <= t_max:
         tik = time.time()
-        neurons_last_spike = update_input(time_step_sim, input_neurons, neurons_last_spike)
+        neurons_last_spike = update_input(time_step_sim, input_neurons, neurons_last_spike)  # when using GPU, this is slow (cost 10 seconds)
 
         tt, neurons_last_spike, V_tt, g_tts, w_tts = step_jit(tt, neurons_last_spike, V_tt, g_tts, w_tts)
         #print("V_tt", jnp.reshape(V_tt, -1))
