@@ -283,7 +283,7 @@ def sim_jit():
         number_spikes[:] += np.asarray(V_tt[:, 0] == V_reset)[n_input:]
         if tt%1000==0:
             for i_hidden in range(n_hidden):
-             FR_vec[i_hidden].append(number_spikes[i_hidden])
+                FR_vec[i_hidden].append(number_spikes[i_hidden])
         number_spikes[:] = 0
         print(time.time() - tik)
     print("#neuron:", n_neurons,"#syn:",  n_synapses)
