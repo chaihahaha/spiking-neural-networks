@@ -258,7 +258,7 @@ def sim_jit():
 
     n_input = len(input_neurons)
     n_hidden = n_neurons - n_input
-    number_spikes = [0] * n_hidden
+    number_spikes = np.array([0] * n_hidden)
     FR_vec = [[] for i in range(n_hidden)]
 
     w_e_storage = np.zeros((int(round((t_max-t_0)/time_step_sim))+1, n_synapses))
@@ -269,7 +269,7 @@ def sim_jit():
     start_time = time.time()
     while tt <= t_max:
         tik = time.time()
-        neurons_last_spike = update_input(time_step_sim, input_neurons, neurons_last_spike)  # when using GPU, this is slow (cost 10 seconds)
+        neurons_last_spike = update_input(time_step_sim, input_neurons, neurons_last_spike)
 
         tt, neurons_last_spike, V_tt, g_tts, w_tts = step_jit(tt, neurons_last_spike, V_tt, g_tts, w_tts)
         #print("V_tt", jnp.reshape(V_tt, -1))
@@ -280,12 +280,9 @@ def sim_jit():
         counter_storage += 1
 
         # record the spike frequency
-        for i in range(n_input, n_neurons):
-            i_hidden = i - n_input
-            if V_tt[i, 0] == V_reset:
-                number_spikes[i_hidden] += 1
-            if tt%1000==0:
-                FR_vec[i_hidden].append(number_spikes[i_hidden])
+        number_spikes[:] += np.asarray(V_tt[:, 0] == V_reset)[n_input:]
+        if tt%1000==0:
+               for i_hidden in range(n_hidden): FR_vec[i_hidden].append(number_spikes[i_hidden])
                 number_spikes[i_hidden] = 0
         print(time.time() - tik)
     print("#neuron:", n_neurons,"#syn:",  n_synapses)
