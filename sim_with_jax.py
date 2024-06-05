@@ -284,7 +284,7 @@ def sim_jit():
         if tt%1000==0:
             for i_hidden in range(n_hidden):
                 FR_vec[i_hidden].append(number_spikes[i_hidden])
-        number_spikes[:] = 0
+            number_spikes[:] = 0
         print(time.time() - tik)
     print("#neuron:", n_neurons,"#syn:",  n_synapses)
     print("total time:", time.time() - start_time)
